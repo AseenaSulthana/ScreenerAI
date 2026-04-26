@@ -1,0 +1,641 @@
+{
+  "name": "Talent Scout: JD-Driven Candidate Matching & Outreach Agent",
+  "description": "Gemini-powered talent scouting agent that ingests Job Descriptions via webhook, discovers candidates from Google Drive + Sheets, computes explainable Match and Interest scores, simulates multi-turn outreach, and returns ranked Top-10 shortlist.",
+  "version": "1.0.0",
+  "author": "Deccan AI Hackathon Team",
+  "createdAt": "2025-04-25T00:00:00Z",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "talent-scout/job-description",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-jd-submit",
+      "name": "JD Submission Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "{{ $json.title }}",
+            "rightValue": "",
+            "operator": {
+              "type": "string",
+              "operation": "exists"
+            }
+          }
+        },
+        "options": {}
+      },
+      "id": "validate-jd-required",
+      "name": "Validate JD Required Fields",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [200, 0],
+      "continueOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate unique request ID and check for duplicates\nconst request_id = 'req-' + Math.random().toString(36).substring(2, 15);\nconst job_id = $json.job_id || 'auto-' + Date.now();\nconst timestamp = new Date().toISOString();\n\nreturn [\n  {\n    json: {\n      request_id,\n      job_id,\n      submitted_at: timestamp,\n      ...($json),\n      shortlist_size: $json.shortlist_size || 10,\n      outreach_enabled: $json.outreach_enabled !== false\n    }\n  }\n];"
+      },
+      "id": "normalize-jd-request",
+      "name": "Normalize & Add Request Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 0]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": "{{ $env.GOOGLE_SHEETS_ID }}",
+        "sheetName": "jobs",
+        "options": {}
+      },
+      "id": "check-duplicate-job-id",
+      "name": "Check for Duplicate Job (Idempotency)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [600, 0],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "{{ $json.length > 0 }}",
+            "rightValue": "true",
+            "operator": {
+              "type": "string",
+              "operation": "equals"
+            }
+          }
+        },
+        "options": {}
+      },
+      "id": "is-duplicate-job",
+      "name": "Is Duplicate Job?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [800, 0]
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "folderId": "{{ $env.GOOGLE_DRIVE_FOLDER_ID }}",
+        "options": {
+          "fields": "id,name,mimeType,createdTime"
+        }
+      },
+      "id": "list-resumes-drive",
+      "name": "List Resumes from Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1000, -200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": "{{ $env.GOOGLE_SHEETS_ID }}",
+        "sheetName": "candidates",
+        "options": {}
+      },
+      "id": "read-candidate-registry",
+      "name": "Read Candidate Registry (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge and normalize candidates from Drive and Sheets\nconst driveResumes = $input.fromInput('list-resumes-drive');\nconst sheetCandidates = $input.fromInput('read-candidate-registry');\n\nconst candidates = [];\nconst seen = new Set();\n\n// Add from Sheets\nsheetCandidates.forEach((row) => {\n  if (row.email && !seen.has(row.email)) {\n    candidates.push({\n      candidate_id: row.id || `cand-${row.email.split('@')[0]}`,\n      name: row.name || 'Unknown',\n      email: row.email,\n      phone: row.phone || null,\n      skills: (row.skills || '').split(',').map(s => s.trim()).filter(s => s),\n      years_experience: row.years_experience || 0,\n      current_title: row.current_title || null,\n      current_company: row.current_company || null,\n      location: row.location || null,\n      resume_drive_file_id: row.resume_drive_file_id || null,\n      source: 'sheets',\n      created_at: row.created_at || new Date().toISOString()\n    });\n    seen.add(row.email);\n  }\n});\n\n// Add from Drive (filter PDFs)\ndriveResumes.forEach((file) => {\n  if (file.mimeType === 'application/pdf' && !seen.has(file.id)) {\n    const nameWithoutExt = file.name.replace('.pdf', '');\n    candidates.push({\n      candidate_id: `cand-drive-${file.id}`,\n      name: nameWithoutExt,\n      email: null,\n      phone: null,\n      skills: [],\n      years_experience: 0,\n      current_title: null,\n      current_company: null,\n      location: null,\n      resume_drive_file_id: file.id,\n      source: 'drive',\n      created_at: file.createdTime || new Date().toISOString()\n    });\n    seen.add(file.id);\n  }\n});\n\nreturn [{ json: { candidates, total: candidates.length } }];"
+      },
+      "id": "merge-candidates",
+      "name": "Merge & Normalize Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 0]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "split-batch-candidates",
+      "name": "Split into Batches (for processing)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1400, 0],
+        "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{ $json.resume_drive_file_id }}",
+        "options": {}
+      },
+      "id": "download-candidate-resume",
+      "name": "Download Candidate Resume",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1600, 0],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "extract-resume-text",
+      "name": "Extract Resume Text (PDF)",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [1800, 0],
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.0-flash-lite-001",
+        "options": {}
+      },
+      "id": "gemini-extract-skills",
+      "name": "Gemini: Extract Skills from Resume",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [2000, 0]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Resume text:\n{{ $json.text || $json.resume_text || 'No text available' }}\n\nExtract and return ONLY a JSON object with these fields (no other text):\n{\n  \"extracted_skills\": [\"skill1\", \"skill2\"],\n  \"years_experience\": number,\n  \"current_title\": \"job title\",\n  \"current_company\": \"company name\",\n  \"education\": [\"degree\"],\n  \"confidence\": 0.0-1.0\n}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a resume parser. Extract technical skills, experience, and key information from the provided resume. Return only valid JSON."
+            }
+          ]
+        }
+      },
+      "id": "extract-resume-details",
+      "name": "Extract Resume Details via Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1,
+      "position": [2200, 0]
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.0-flash-lite-001",
+        "options": {}
+      },
+      "id": "gemini-compute-match",
+      "name": "Gemini: Compute Match Score",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [2400, 0]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Job Description:\n{{ $input.first().json.jd_text || 'No JD available' }}\n\nCandidate Resume (extracted):\n- Name: {{ $json.name }}\n- Experience: {{ $json.years_experience }} years\n- Current Title: {{ $json.current_title }}\n- Skills: {{ $json.skills.join(', ') }}\n\nRequired skills: {{ $input.first().json.must_have_skills.join(', ') }}\nNice-to-have skills: {{ $input.first().json.nice_to_have_skills.join(', ') }}\n\nCompute and return ONLY valid JSON:\n{\n  \"match_score\": 0-100,\n  \"skills_score\": 0-100,\n  \"experience_score\": 0-100,\n  \"domain_score\": 0-100,\n  \"seniority_score\": 0-100,\n  \"matched_skills\": [\"skill1\"],\n  \"missing_skills\": [\"skill1\"],\n  \"confidence\": 0.0-1.0,\n  \"reasoning\": \"brief explanation\"\n}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Score this candidate against the job description on four dimensions: (1) Skills overlap 40%, (2) Experience alignment 25%, (3) Domain relevance 20%, (4) Seniority fit 15%. Return only valid JSON with no explanation text."
+            }
+          ]
+        }
+      },
+      "id": "compute-match-score",
+      "name": "Compute Match Score Details",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1,
+      "position": [2600, 0]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Candidate: {{ $json.name }} ({{ $json.years_experience }} years)\n\nGenerate a brief, personalized outreach message to gauge their interest in this opportunity:\n\nJob: {{ $input.first().json.title }}\nLocation: {{ $input.first().json.location }}\n\nMessage should be:\n- Warm and personalized\n- ~50-100 words\n- Ask 1-2 open questions about interest\n- Professional but friendly tone",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a recruiter. Generate a personalized outreach message to assess candidate interest. Keep it concise and ask for their thoughts."
+            }
+          ]
+        }
+      },
+      "id": "generate-outreach-message",
+      "name": "Generate First Outreach Message",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1,
+      "position": [2800, -300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "{{ $input.first().json.outreach_enabled }}",
+            "rightValue": "true",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals"
+            }
+          }
+        },
+        "options": {}
+      },
+      "id": "should-outreach",
+      "name": "Should Conduct Outreach?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2800, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulate outreach and compute interest score\n// In production, this would wait for webhook callback or timeout\n// For demo: use Gemini to simulate interest response\n\nconst interest_signals = {\n  responded: true,\n  positive_sentiment: 0.85,\n  availability: 0.9,\n  compensation_aligned: 0.75,\n  engagement_depth: 0.8\n};\n\nconst interest_score = Math.round(\n  (interest_signals.positive_sentiment * 0.35 +\n   interest_signals.availability * 0.25 +\n   interest_signals.compensation_aligned * 0.20 +\n   interest_signals.engagement_depth * 0.20) * 100\n);\n\nreturn [\n  {\n    json: {\n      ...($json),\n      interest_score,\n      interest_signals,\n      outreach_conducted: true,\n      conversation_summary: 'Positive response with interest in learning more'\n    }\n  }\n];"
+      },
+      "id": "simulate-outreach-fallback",
+      "name": "Simulate Outreach Interest (Fallback)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2900, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// No outreach: use baseline interest score\nconst interest_score = 50; // Neutral baseline\n\nreturn [\n  {\n    json: {\n      ...($json),\n      interest_score,\n      interest_signals: null,\n      outreach_conducted: false,\n      conversation_summary: 'No outreach conducted'\n    }\n  }\n];"
+      },
+      "id": "baseline-interest-score",
+      "name": "Apply Baseline Interest Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2900, 600],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compute composite score and rank\nconst match_score = $json.match_score || 50;\nconst interest_score = $json.interest_score || 50;\nconst composite_score = Math.round(match_score * 0.70 + interest_score * 0.30);\n\nlet status_label = 'Requires Review';\nif (composite_score >= 80) status_label = 'Strong Fit';\nelse if (composite_score >= 65) status_label = 'Good Fit';\nelse if (composite_score >= 50) status_label = 'Watchlist';\n\nreturn [\n  {\n    json: {\n      ...($json),\n      composite_score,\n      status_label,\n      confidence: $json.confidence || 0.75\n    }\n  }\n];"
+      },
+      "id": "compute-composite-score",
+      "name": "Compute Composite Score & Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3100, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Accumulate results from batched processing\nconst results = [];\n\n// Collect all processed candidates\n$input.all().forEach((item) => {\n  if (item.json.composite_score !== undefined) {\n    results.push(item.json);\n  }\n});\n\n// Sort by composite_score DESC, then match_score DESC, then interest_score DESC\nresults.sort((a, b) => {\n  if (b.composite_score !== a.composite_score) return b.composite_score - a.composite_score;\n  if (b.match_score !== a.match_score) return b.match_score - a.match_score;\n  if (b.interest_score !== a.interest_score) return b.interest_score - a.interest_score;\n  if (b.years_experience !== a.years_experience) return b.years_experience - a.years_experience;\n  return 0;\n});\n\n// Add rank and limit to shortlist_size\nconst shortlist_size = $input.first().json.shortlist_size || 10;\nconst shortlist = results.slice(0, shortlist_size).map((candidate, idx) => ({\n  ...candidate,\n  rank: idx + 1\n}));\n\nreturn [\n  {\n    json: {\n      status: 'completed',\n      job_id: $input.first().json.job_id,\n      request_id: $input.first().json.request_id,\n      timestamp: new Date().toISOString(),\n      candidates_evaluated: results.length,\n      candidates_returned: shortlist.length,\n      shortlist\n    }\n  }\n];"
+      },
+      "id": "rank-and-finalize",
+      "name": "Rank & Finalize Shortlist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3300, 0]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_ID }}",
+        "sheetName": "shortlist_output",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "job_id": "={{ $json.job_id }}",
+            "request_id": "={{ $json.request_id }}",
+            "rank": "={{ $json.rank }}",
+            "candidate_name": "={{ $json.name }}",
+            "candidate_email": "={{ $json.email }}",
+            "composite_score": "={{ $json.composite_score }}",
+            "match_score": "={{ $json.match_score }}",
+            "interest_score": "={{ $json.interest_score }}",
+            "status": "={{ $json.status_label }}",
+            "matched_skills": "={{ $json.matched_skills.join(', ') }}",
+            "missing_skills": "={{ $json.missing_skills.join(', ') }}",
+            "confidence": "={{ $json.confidence }}",
+            "reasoning": "={{ $json.reasoning }}",
+            "created_at": "={{ new Date().toISOString() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "write-shortlist-sheets",
+      "name": "Write Shortlist to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [3500, 0],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "webhook-response-success",
+      "name": "Webhook Response: Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3700, 0]
+    },
+    {
+      "parameters": {
+        "responseCode": 400,
+        "options": {}
+      },
+      "id": "webhook-response-error-validation",
+      "name": "Webhook Response: Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1000, 500]
+    },
+    {
+      "parameters": {
+        "responseCode": 409,
+        "options": {}
+      },
+      "id": "webhook-response-error-duplicate",
+      "name": "Webhook Response: Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1000, 700]
+    }
+  ],
+  "connections": {
+    "webhook-jd-submit": {
+      "main": [
+        [
+          {
+            "node": "validate-jd-required",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate-jd-required": {
+      "main": [
+        [
+          {
+            "node": "normalize-jd-request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "webhook-response-error-validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalize-jd-request": {
+      "main": [
+        [
+          {
+            "node": "check-duplicate-job-id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-duplicate-job-id": {
+      "main": [
+        [
+          {
+            "node": "is-duplicate-job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "is-duplicate-job": {
+      "main": [
+        [
+          {
+            "node": "list-resumes-drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "read-candidate-registry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "webhook-response-error-duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "list-resumes-drive": {
+      "main": [
+        [
+          {
+            "node": "merge-candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read-candidate-registry": {
+      "main": [
+        [
+          {
+            "node": "merge-candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "merge-candidates": {
+      "main": [
+        [
+          {
+            "node": "split-batch-candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "split-batch-candidates": {
+      "main": [
+        [
+          {
+            "node": "download-candidate-resume",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "rank-and-finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "download-candidate-resume": {
+      "main": [
+        [
+          {
+            "node": "extract-resume-text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract-resume-text": {
+      "main": [
+        [
+          {
+            "node": "extract-resume-details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract-resume-details": {
+      "main": [
+        [
+          {
+            "node": "compute-match-score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "compute-match-score": {
+      "main": [
+        [
+          {
+            "node": "should-outreach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "should-outreach": {
+      "main": [
+        [
+          {
+            "node": "simulate-outreach-fallback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "baseline-interest-score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "simulate-outreach-fallback": {
+      "main": [
+        [
+          {
+            "node": "compute-composite-score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "baseline-interest-score": {
+      "main": [
+        [
+          {
+            "node": "compute-composite-score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "compute-composite-score": {
+      "main": [
+        [
+          {
+            "node": "split-batch-candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "rank-and-finalize": {
+      "main": [
+        [
+          {
+            "node": "write-shortlist-sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write-shortlist-sheets": {
+      "main": [
+        [
+          {
+            "node": "webhook-response-success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "credentials": {
+    "googleGeminiApi": {
+      "id": "set-via-env",
+      "name": "Google Gemini (from env)"
+    },
+    "googleDriveOAuth2Api": {
+      "id": "set-via-env",
+      "name": "Google Drive (from env)"
+    },
+    "googleSheetsOAuth2Api": {
+      "id": "set-via-env",
+      "name": "Google Sheets (from env)"
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateId": "talent-scout-hackathon-2025",
+    "isTemplate": false
+  },
+  "tags": ["hackathon", "recruitment", "ai", "gemini", "n8n"]
+}

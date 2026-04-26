@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: talent-agent-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PROTOCOL=http
+      - N8N_PORT=5678
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_TUNNEL_URL=http://localhost:5678/
+      - N8N_TEMPLATES_ENABLED=true
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      # Google API credentials (from environment or .env file)
+      - GOOGLE_GEMINI_API_KEY=${GOOGLE_GEMINI_API_KEY}
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
+      - GOOGLE_SHEETS_ID=${GOOGLE_SHEETS_ID}
+      # n8n configuration
+      - DB_TYPE=sqlite
+      - DB_SQLITE_PATH=/home/node/.n8n/database.sqlite
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows:ro
+      - ./credentials:/home/node/.n8n/credentials:ro
+    networks:
+      - talent-agent
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    labels:
+      - "com.deccan.app=talent-scout-agent"
+
+  # Optional: PostgreSQL for production n8n (instead of SQLite)
+  postgres:
+    image: postgres:15-alpine
+    container_name: talent-agent-postgres
+    environment:
+      - POSTGRES_USER=n8n
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme123}
+      - POSTGRES_DB=n8n
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - talent-agent
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # Optional: Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: talent-agent-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - talent-agent
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  n8n-data:
+  postgres-data:
+  redis-data:
+
+networks:
+  talent-agent:
+    driver: bridge
+
+# Usage:
+# Development (SQLite):
+#   docker-compose up -d
+#
+# Production (PostgreSQL + Redis):
+#   docker-compose --profile production up -d
+#
+# View logs:
+#   docker-compose logs -f n8n
+#
+# Stop all:
+#   docker-compose down
+#
+# Remove all data:
+#   docker-compose down -v

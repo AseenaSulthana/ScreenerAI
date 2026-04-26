@@ -1,0 +1,470 @@
+{
+  "status": "completed",
+  "job_id": "job-2025-backend-senior-001",
+  "request_id": "req-abc123def456xyz",
+  "timestamp": "2025-04-27T10:30:45.123Z",
+  "execution_ms": 47230,
+  "candidates_evaluated": 247,
+  "candidates_returned": 10,
+  "shortlist": [
+    {
+      "rank": 1,
+      "candidate_id": "cand-001",
+      "name": "Alice Chen",
+      "email": "alice.chen@example.com",
+      "phone": "+1-415-555-0101",
+      "current_title": "Senior Backend Engineer",
+      "current_company": "TechCorp Inc",
+      "years_experience": 7,
+      "location": "San Francisco, CA",
+      "match_score": 94,
+      "interest_score": 88,
+      "composite_score": 91.8,
+      "status_label": "Strong Fit",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker",
+        "Kubernetes",
+        "Redis",
+        "CI/CD"
+      ],
+      "missing_skills": [],
+      "confidence": 0.96,
+      "explainability": {
+        "why_matched": "7 years backend experience at scale, expert-level Python and AWS knowledge, proven microservices architecture background, Docker and Kubernetes certified. Currently at series-B startup, familiar with fast-paced environments.",
+        "why_not_higher": "No explicit Terraform/IaC experience mentioned, though AWS knowledge suggests transferable skills.",
+        "interest_rationale": "Expressed strong interest in growth opportunity, asked detailed questions about team structure and tech stack, indicated 2-week notice period.",
+        "outreach_summary": "Multi-turn conversation: Positive sentiment (89%), enthusiastic about remote setup, mentioned stock options as important factor (aligned with our offer), proactively asked about on-call expectations.",
+        "match_breakdown": {
+          "skills_score": 96,
+          "experience_score": 95,
+          "domain_score": 92,
+          "seniority_score": 90
+        }
+      },
+      "risk_flags": [],
+      "next_action": "schedule_interview"
+    },
+    {
+      "rank": 2,
+      "candidate_id": "cand-042",
+      "name": "Bob Martinez",
+      "email": "bob.martinez@example.com",
+      "phone": "+1-206-555-0202",
+      "current_title": "Backend Engineer III",
+      "current_company": "CloudServices Ltd",
+      "years_experience": 6,
+      "location": "Seattle, WA",
+      "match_score": 87,
+      "interest_score": 82,
+      "composite_score": 85.9,
+      "status_label": "Strong Fit",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker",
+        "RabbitMQ",
+        "Redis"
+      ],
+      "missing_skills": [
+        "Kubernetes"
+      ],
+      "confidence": 0.92,
+      "explainability": {
+        "why_matched": "6 years production backend experience, solid Python skills, AWS expertise spanning EC2/RDS/S3/Lambda. Experience with message queues (RabbitMQ) is bonus. Strong foundation for role.",
+        "why_not_higher": "No Kubernetes experience visible; would require ramp-up on container orchestration. Slightly below seniority expectation (Engineer III vs Senior).",
+        "interest_rationale": "Moderate interest expressed, asked about team size and learning opportunities, seemed concerned about work-life balance (possible red flag).",
+        "outreach_summary": "Response time: 4 hours. Tone: professional but reserved. Mentioned current role is stable but open to better opportunity. Asked salary range early in conversation (typical for mid-level engineers).",
+        "match_breakdown": {
+          "skills_score": 88,
+          "experience_score": 85,
+          "domain_score": 86,
+          "seniority_score": 81
+        }
+      },
+      "risk_flags": [
+        "expressed_concern_about_work_life_balance",
+        "currently_stable_at_job"
+      ],
+      "next_action": "conduct_culture_fit_call"
+    },
+    {
+      "rank": 3,
+      "candidate_id": "cand-103",
+      "name": "Carol Singh",
+      "email": "carol.singh@example.com",
+      "phone": null,
+      "current_title": "Principal Engineer",
+      "current_company": "BigTech Corp",
+      "years_experience": 11,
+      "location": "Austin, TX",
+      "match_score": 85,
+      "interest_score": 65,
+      "composite_score": 80.0,
+      "status_label": "Good Fit",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker",
+        "Kubernetes",
+        "Terraform",
+        "Architecture"
+      ],
+      "missing_skills": [],
+      "confidence": 0.88,
+      "explainability": {
+        "why_matched": "Exceptional technical depth with 11 years experience, Principal-level engineer at major tech company. Extensive knowledge across all required and nice-to-have skills. Proven ability to architect large systems.",
+        "why_not_higher": "Lower interest signal (65%) — may be overqualified or exploring options casually. Missing details about current compensation expectations relative to our offer range.",
+        "interest_rationale": "Initial interest detected but lukewarm follow-up. Mentioned 'exploring options' rather than 'actively looking.' Suggested might prefer principal-track role over senior IC role.",
+        "outreach_summary": "Single-turn response only (timeout on follow-up). Indicated current role still engaging. Asked about career trajectory and long-term growth path, suggesting potential flight risk if not positioned correctly.",
+        "match_breakdown": {
+          "skills_score": 98,
+          "experience_score": 96,
+          "domain_score": 88,
+          "seniority_score": 85
+        }
+      },
+      "risk_flags": [
+        "potentially_overqualified",
+        "lukewarm_interest_signal",
+        "flight_risk_if_title_concern"
+      ],
+      "next_action": "require_clarification"
+    },
+    {
+      "rank": 4,
+      "candidate_id": "cand-187",
+      "name": "David Lee",
+      "email": "david.lee@example.com",
+      "phone": "+44-20-7946-0958",
+      "current_title": "Senior Software Engineer",
+      "current_company": "StartupXYZ",
+      "years_experience": 5,
+      "location": "London, UK",
+      "match_score": 82,
+      "interest_score": 79,
+      "composite_score": 81.4,
+      "status_label": "Good Fit",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker",
+        "GraphQL"
+      ],
+      "missing_skills": [
+        "Kubernetes"
+      ],
+      "confidence": 0.85,
+      "explainability": {
+        "why_matched": "5 years backend experience at early-stage startup (scaling experience). Strong Python and AWS skills. GraphQL experience is bonus. Located in UK but indicated openness to US timezone.",
+        "why_not_higher": "At the lower end of 5+ year requirement (exactly 5 years). No Kubernetes, would need training. Remote from UK might present timezone/coordination challenges.",
+        "interest_rationale": "Solid interest expressed (79%), asked about visa sponsorship upfront (indicates seriousness). Mentioned looking to move to US-based company for growth.",
+        "outreach_summary": "Responsive and enthusiastic. Mentioned startup burnout but keen on new challenge. Indicated 4-week notice period. Visa sponsorship is a blocker for immediate start but not disqualifying.",
+        "match_breakdown": {
+          "skills_score": 80,
+          "experience_score": 78,
+          "domain_score": 82,
+          "seniority_score": 80
+        }
+      },
+      "risk_flags": [
+        "at_minimum_experience_level",
+        "visa_sponsorship_required",
+        "timezone_coordination_needed"
+      ],
+      "next_action": "technical_assessment"
+    },
+    {
+      "rank": 5,
+      "candidate_id": "cand-256",
+      "name": "Emma Wilson",
+      "email": "emma.wilson@example.com",
+      "phone": "+1-510-555-0505",
+      "current_title": "Full Stack Engineer",
+      "current_company": "WebCorp Inc",
+      "years_experience": 4,
+      "location": "Oakland, CA",
+      "match_score": 76,
+      "interest_score": 88,
+      "composite_score": 79.2,
+      "status_label": "Good Fit",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker",
+        "React"
+      ],
+      "missing_skills": [
+        "Kubernetes",
+        "Terraform",
+        "Advanced System Design"
+      ],
+      "confidence": 0.82,
+      "explainability": {
+        "why_matched": "Strong fundamentals in Python, databases, and AWS. Full-stack background suggests well-rounded perspective. Very high interest signal and enthusiasm for backend specialization.",
+        "why_not_higher": "Below 5-year minimum (only 4 years), primarily Full Stack rather than Backend specialist. Would require onboarding on advanced distributed systems topics.",
+        "interest_rationale": "Very high interest (88%) — actively seeking backend-focused role, mentioned wanting to deepen expertise. Early-stage growth mindset, coachable.",
+        "outreach_summary": "Enthusiastic and proactive. Asked about mentorship and learning opportunities. Mentioned willingness to grow into role responsibilities. High growth potential candidate.",
+        "match_breakdown": {
+          "skills_score": 74,
+          "experience_score": 70,
+          "domain_score": 76,
+          "seniority_score": 75
+        }
+      },
+      "risk_flags": [
+        "below_minimum_experience_by_one_year",
+        "junior_for_senior_role_title"
+      ],
+      "next_action": "conduct_culture_fit_call"
+    },
+    {
+      "rank": 6,
+      "candidate_id": "cand-301",
+      "name": "Frank Zhang",
+      "email": "frank.zhang@example.com",
+      "phone": "+1-408-555-0606",
+      "current_title": "Backend Engineer",
+      "current_company": "PaymentCo",
+      "years_experience": 6,
+      "location": "Mountain View, CA",
+      "match_score": 79,
+      "interest_score": 72,
+      "composite_score": 77.1,
+      "status_label": "Watchlist",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker",
+        "Kafka"
+      ],
+      "missing_skills": [
+        "Kubernetes",
+        "GraphQL"
+      ],
+      "confidence": 0.80,
+      "explainability": {
+        "why_matched": "6 years backend experience with payment systems (high complexity domain). Strong AWS and Python. Kafka experience is valuable for message queues.",
+        "why_not_higher": "Moderate interest signal (72%), unclear if actively looking. Payment systems background is specialized; some ramp-up needed for general backend systems.",
+        "interest_rationale": "Polite but cautious interest. Asked about stability and growth potential rather than day-to-day work. Suggests possible passive candidate (comfortable where he is).",
+        "outreach_summary": "Response came after 1 day (slower than top candidates). Tone: professional but neutral. Mentioned 'exploring options' without enthusiasm. Could be good fit if convinced of opportunity.",
+        "match_breakdown": {
+          "skills_score": 80,
+          "experience_score": 80,
+          "domain_score": 76,
+          "seniority_score": 74
+        }
+      },
+      "risk_flags": [
+        "passive_candidate_not_actively_looking",
+        "moderate_interest_signal"
+      ],
+      "next_action": "require_clarification"
+    },
+    {
+      "rank": 7,
+      "candidate_id": "cand-399",
+      "name": "Grace Park",
+      "email": "grace.park@example.com",
+      "phone": "+82-2-6959-9999",
+      "current_title": "Senior Backend Engineer",
+      "current_company": "TechStartup Korea",
+      "years_experience": 7,
+      "location": "Seoul, South Korea",
+      "match_score": 81,
+      "interest_score": 58,
+      "composite_score": 75.2,
+      "status_label": "Watchlist",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker"
+      ],
+      "missing_skills": [
+        "Kubernetes",
+        "Terraform",
+        "Kafka"
+      ],
+      "confidence": 0.78,
+      "explainability": {
+        "why_matched": "7 years backend experience, senior-level engineer with solid Python/AWS/PostgreSQL foundation. Meets minimum years requirement.",
+        "why_not_higher": "Lower interest (58%), location in Korea presents timezone and relocation concerns. Some nice-to-have skills missing.",
+        "interest_rationale": "Low enthusiasm detected. Asked many logistical questions (visa, relocation help, family support) rather than role specifics. May view as long shot.",
+        "outreach_summary": "Moderate response (24 hours), cautious tone. Relocation concerns dominanteach the initial outreach. Without relocation package, unlikely to pursue.",
+        "match_breakdown": {
+          "skills_score": 82,
+          "experience_score": 84,
+          "domain_score": 78,
+          "seniority_score": 81
+        }
+      },
+      "risk_flags": [
+        "international_relocation_required",
+        "low_interest_signal",
+        "timezone_misalignment"
+      ],
+      "next_action": "archive"
+    },
+    {
+      "rank": 8,
+      "candidate_id": "cand-445",
+      "name": "Henry Brown",
+      "email": "henry.brown@example.com",
+      "phone": "+1-202-555-0808",
+      "current_title": "DevOps Engineer / Infrastructure Specialist",
+      "current_company": "CloudOps Inc",
+      "years_experience": 8,
+      "location": "Washington, DC",
+      "match_score": 73,
+      "interest_score": 75,
+      "composite_score": 73.6,
+      "status_label": "Watchlist",
+      "matched_skills": [
+        "Python",
+        "AWS",
+        "Docker",
+        "Kubernetes",
+        "Terraform",
+        "Infrastructure-as-Code"
+      ],
+      "missing_skills": [
+        "PostgreSQL (SQL deep expertise)",
+        "Application-level REST API design",
+        "Backend systems architecture"
+      ],
+      "confidence": 0.75,
+      "explainability": {
+        "why_matched": "Strong Infrastructure/DevOps background with 8 years experience, excellent Kubernetes and Terraform skills (nice-to-haves we heavily weight). Python knowledge sufficient for scripting.",
+        "why_not_higher": "DevOps-focused career track, not application backend engineering. Would require significant ramp-up on DB optimization, API design, system architecture. Cross-discipline hire with medium risk.",
+        "interest_rationale": "Solid interest (75%), mentioning desire to transition toward backend architecture from infrastructure. Could be growth opportunity or career pivot risk.",
+        "outreach_summary": "Responsive, asked about learning support and mentorship. Indicated openness to reskilling in application domains. Mentions infrastructure expertise as transferable.",
+        "match_breakdown": {
+          "skills_score": 65,
+          "experience_score": 78,
+          "domain_score": 72,
+          "seniority_score": 76
+        }
+      },
+      "risk_flags": [
+        "infrastructure_background_not_backend",
+        "would_require_significant_ramp_up"
+      ],
+      "next_action": "require_clarification"
+    },
+    {
+      "rank": 9,
+      "candidate_id": "cand-523",
+      "name": "Iris Thompson",
+      "email": "iris.thompson@example.com",
+      "phone": "+1-617-555-0909",
+      "current_title": "Junior Backend Engineer",
+      "current_company": "StartupABC",
+      "years_experience": 2,
+      "location": "Boston, MA",
+      "match_score": 65,
+      "interest_score": 92,
+      "composite_score": 72.6,
+      "status_label": "Watchlist",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs",
+        "Docker"
+      ],
+      "missing_skills": [
+        "Kubernetes",
+        "Advanced AWS services (Lambda, ECS)",
+        "System design at scale",
+        "Mentoring experience"
+      ],
+      "confidence": 0.70,
+      "explainability": {
+        "why_matched": "Strong fundamentals and enthusiastic learner. 2 years startup experience provides real-world exposure. Excellent growth trajectory candidate.",
+        "why_not_higher": "Significantly below 5-year minimum (only 2 years). Cannot fill senior role independently; would require significant investment. Better as mid-level hire or mentee.",
+        "interest_rationale": "Exceptional interest (92%) — very keen on senior-level opportunity, may be aspirational rather than realistic self-assessment. High enthusiasm and learning motivation.",
+        "outreach_summary": "Very responsive and enthusiastic. Asked about growth path and mentoring structure. Proactively mentioned courses/certifications she's completing. High engagement.",
+        "match_breakdown": {
+          "skills_score": 62,
+          "experience_score": 45,
+          "domain_score": 68,
+          "seniority_score": 50
+        }
+      },
+      "risk_flags": [
+        "significantly_below_experience_minimum",
+        "not_ready_for_senior_role",
+        "high_expectations_vs_capabilities_mismatch"
+      ],
+      "next_action": "archive"
+    },
+    {
+      "rank": 10,
+      "candidate_id": "cand-601",
+      "name": "Jack Morrison",
+      "email": "jack.morrison@example.com",
+      "phone": "+1-312-555-1010",
+      "current_title": "Backend Engineer II",
+      "current_company": "FinTech Solutions",
+      "years_experience": 5,
+      "location": "Chicago, IL",
+      "match_score": 80,
+      "interest_score": 60,
+      "composite_score": 74.0,
+      "status_label": "Watchlist",
+      "matched_skills": [
+        "Python",
+        "PostgreSQL",
+        "AWS",
+        "REST APIs"
+      ],
+      "missing_skills": [
+        "Docker",
+        "Kubernetes",
+        "Terraform",
+        "DevOps practices"
+      ],
+      "confidence": 0.76,
+      "explainability": {
+        "why_matched": "Exactly 5 years experience, solid core backend skills (Python, SQL, AWS). FinTech background indicates comfort with complex systems.",
+        "why_not_higher": "Missing containerization/deployment skills (Docker, Kubernetes), which are critical for modern backend. Lower interest signal (60%) suggests passive candidate.",
+        "interest_rationale": "Lukewarm interest; appears more comfortable staying put. Asked about security requirements rather than role specifics. Unlikely to move without significant incentive.",
+        "outreach_summary": "Delayed response (2+ days), professional tone, non-committal. Mentioned current role satisfaction but mentioned 'keeping options open.' Passive candidate profile.",
+        "match_breakdown": {
+          "skills_score": 78,
+          "experience_score": 80,
+          "domain_score": 80,
+          "seniority_score": 78
+        }
+      },
+      "risk_flags": [
+        "missing_devops_containerization_skills",
+        "passive_candidate",
+        "low_interest_signal"
+      ],
+      "next_action": "archive"
+    }
+  ],
+  "summary": {
+    "strong_fits_count": 2,
+    "good_fits_count": 3,
+    "watchlist_count": 5,
+    "recommendation": "Schedule interviews with Alice Chen (rank 1) and Bob Martinez (rank 2) immediately. Consider Carol Singh for Principal role if available. Emma Wilson shows strong growth potential despite experience gap.",
+    "notes": "Shortlist was generated from 247 candidate profiles. Top 3 candidates show 82-94% match scores with 79-88% interest scores. Good diversity in experience levels and backgrounds."
+  }
+}

@@ -1,0 +1,817 @@
+{
+  "name": "Screener AI v1 - Unified Talent Scouting & Engagement",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "talent-scout/v1",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst rawJd = body.jd_text || body.raw_jd_text || body.job_description || '';\n\nreturn [{\n  json: {\n    request_id: body.request_id || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,\n    job_id: body.job_id || `job-${Date.now()}`,\n    raw_jd_text: String(rawJd).trim(),\n    shortlist_size: Number(body.shortlist_size || 10),\n    weights: {\n      match_weight: Number(body.match_weight || 0.7),\n      interest_weight: Number(body.interest_weight || 0.3)\n    },\n    supplied_candidates: Array.isArray(body.candidates) ? body.candidates : [],\n    metadata: {\n      source: body.source || 'webhook',\n      received_at: new Date().toISOString()\n    }\n  }\n}];"
+      },
+      "id": "2",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "jd-check",
+              "leftValue": "={{ $json.raw_jd_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Has JD Text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    error: 'missing_jd_data',\n    message: 'raw JD text is required in jd_text/raw_jd_text/job_description',\n    request_id: $json.request_id || null\n  }\n}];"
+      },
+      "id": "4",
+      "name": "Build Missing JD Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "5",
+      "name": "Respond Missing JD",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        920,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a recruitment ontology parser. Parse the following job description and return STRICT JSON only with schema:\n{\n  \"roles\": [\"string\"],\n  \"skills\": [{\"name\":\"string\",\"weight\":0-1}],\n  \"experience_level\": \"entry|mid|senior|lead|principal\",\n  \"keywords\": [\"string\"]\n}\n\nRules:\n- Include 8-20 skills when possible\n- Skill weights must sum to around 1.0\n- Keep keywords concise\n- No markdown, no explanation\n\nJD:\n{{ $json.raw_jd_text }}"
+      },
+      "id": "6",
+      "name": "JD Parser LLM",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        700,
+        140
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function safeParse(text) {\n  if (!text || typeof text !== 'string') return null;\n  const cleaned = text.replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(cleaned); } catch {}\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch {}\n  }\n  return null;\n}\n\nfunction fallbackJd(raw) {\n  const text = String(raw || '').toLowerCase();\n  const skillDict = [\n    'python','java','javascript','typescript','node.js','react','aws','gcp','azure','docker','kubernetes','sql','nosql','llm','nlp','machine learning','fastapi','spring','microservices','rest api'\n  ];\n  const found = skillDict.filter((s) => text.includes(s.replace('.js', '')) || text.includes(s));\n  const uniq = [...new Set(found)].slice(0, 12);\n  const roles = [];\n  if (text.includes('engineer')) roles.push('Engineer');\n  if (text.includes('developer')) roles.push('Developer');\n  if (text.includes('scientist')) roles.push('Scientist');\n  if (!roles.length) roles.push('Software Professional');\n\n  let level = 'mid';\n  if (text.includes('principal')) level = 'principal';\n  else if (text.includes('lead')) level = 'lead';\n  else if (text.includes('senior')) level = 'senior';\n  else if (text.includes('junior') || text.includes('entry')) level = 'entry';\n\n  const w = uniq.length ? Number((1 / uniq.length).toFixed(4)) : 1;\n  const skills = (uniq.length ? uniq : ['communication']).map((name) => ({ name, weight: w }));\n  const keywords = uniq.slice(0, 10);\n\n  return { roles, skills, experience_level: level, keywords };\n}\n\nconst llmRaw = $json.text || $json.output || '';\nconst parsed = safeParse(llmRaw);\nconst jd = parsed && Array.isArray(parsed.skills) ? parsed : fallbackJd($json.raw_jd_text);\n\nconst valid = Array.isArray(jd.roles) && Array.isArray(jd.skills) && typeof jd.experience_level === 'string' && Array.isArray(jd.keywords);\n\nreturn [{\n  json: {\n    request_id: $json.request_id,\n    job_id: $json.job_id,\n    raw_jd_text: $json.raw_jd_text,\n    shortlist_size: $json.shortlist_size,\n    weights: $json.weights,\n    metadata: $json.metadata,\n    supplied_candidates: $json.supplied_candidates,\n    jd_contract_valid: valid,\n    job_summary: jd\n  }\n}];"
+      },
+      "id": "7",
+      "name": "JD Schema Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        930,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "jd-contract",
+              "leftValue": "={{ $json.jd_contract_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "JD Contract Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1160,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    error: 'jd_schema_validation_failed',\n    request_id: $json.request_id,\n    job_id: $json.job_id,\n    message: 'JD parser could not produce required schema'\n  }\n}];"
+      },
+      "id": "9",
+      "name": "Build JD Contract Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1370,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "10",
+      "name": "Respond JD Contract Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1590,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function normalizeCandidate(c, idx) {\n  const skills = Array.isArray(c.skills) ? c.skills : String(c.skills || '').split(',').map((s) => s.trim()).filter(Boolean);\n  return {\n    candidate_id: c.candidate_id || `cand-${idx + 1}`,\n    name: c.name || `Candidate ${idx + 1}`,\n    skills,\n    years_experience: Number(c.years_experience || c.exp || 0),\n    profile_summary: c.profile_summary || c.summary || '',\n    source: c.source || 'input'\n  };\n}\n\nconst provided = Array.isArray($json.supplied_candidates) ? $json.supplied_candidates : [];\n\nconst mock = [\n  { candidate_id: 'cand-101', name: 'Ava Sharma', skills: ['python','llm','fastapi','docker','aws'], years_experience: 5, profile_summary: 'Built LLM candidate scoring services in production', source: 'mock' },\n  { candidate_id: 'cand-102', name: 'Rohan Mehta', skills: ['java','spring','kubernetes','sql'], years_experience: 7, profile_summary: 'Backend platform engineer with hiring pipeline exposure', source: 'mock' },\n  { candidate_id: 'cand-103', name: 'Mina Das', skills: ['python','nlp','machine learning','vector db','gcp'], years_experience: 4, profile_summary: 'NLP engineer focused on semantic search', source: 'mock' },\n  { candidate_id: 'cand-104', name: 'Ibrahim Khan', skills: ['typescript','node.js','react','rest api'], years_experience: 3, profile_summary: 'Full-stack engineer integrating ATS workflows', source: 'mock' },\n  { candidate_id: 'cand-105', name: 'Chen Wu', skills: ['python','microservices','docker','kubernetes','azure'], years_experience: 6, profile_summary: 'Designed cloud-native scoring systems', source: 'mock' }\n];\n\nconst chosen = provided.length ? provided : mock;\nconst candidates = chosen.map(normalizeCandidate).filter((c) => c.name);\n\nreturn [{\n  json: {\n    request_id: $json.request_id,\n    job_id: $json.job_id,\n    shortlist_size: $json.shortlist_size,\n    weights: $json.weights,\n    metadata: $json.metadata,\n    job_summary: $json.job_summary,\n    candidates,\n    candidate_count: candidates.length\n  }\n}];"
+      },
+      "id": "11",
+      "name": "Candidate Fetcher (Mock/API)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1370,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cand-non-empty",
+              "leftValue": "={{ $json.candidate_count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "12",
+      "name": "Candidate Pool Non-Empty?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1590,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    job_summary: $json.job_summary,\n    candidates: [],\n    warning: 'empty_candidate_pool',\n    request_id: $json.request_id,\n    job_id: $json.job_id\n  }\n}];"
+      },
+      "id": "13",
+      "name": "Build Empty Candidate Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1810,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "14",
+      "name": "Respond Empty Candidate Pool",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2030,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\nfor (const c of $json.candidates) {\n  out.push({\n    json: {\n      request_id: $json.request_id,\n      job_id: $json.job_id,\n      shortlist_size: $json.shortlist_size,\n      weights: $json.weights,\n      job_summary: $json.job_summary,\n      candidate: c\n    }\n  });\n}\nreturn out;"
+      },
+      "id": "15",
+      "name": "Fan Out Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1810,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $json.candidate || {};\nconst valid = Boolean(c.name) && Array.isArray(c.skills) && Number.isFinite(Number(c.years_experience));\n\nif (!valid) {\n  return [{\n    json: {\n      ...$json,\n      candidate: {\n        candidate_id: c.candidate_id || 'unknown',\n        name: c.name || 'Unknown',\n        skills: Array.isArray(c.skills) ? c.skills : [],\n        years_experience: Number(c.years_experience || 0),\n        profile_summary: c.profile_summary || ''\n      },\n      candidate_contract_valid: false\n    }\n  }];\n}\n\nreturn [{ json: { ...$json, candidate_contract_valid: true } }];"
+      },
+      "id": "16",
+      "name": "Candidate Schema Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2030,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jdSkills = ($json.job_summary.skills || []).map((s) => String(s.name || '').toLowerCase());\nconst jdWeight = Object.fromEntries(($json.job_summary.skills || []).map((s) => [String(s.name || '').toLowerCase(), Number(s.weight || 0)]));\nconst candSkills = ($json.candidate.skills || []).map((s) => String(s).toLowerCase());\n\nlet overlap = 0;\nlet weightHit = 0;\nconst matched = [];\nfor (const s of jdSkills) {\n  if (candSkills.includes(s)) {\n    overlap += 1;\n    weightHit += jdWeight[s] || 0;\n    matched.push(s);\n  }\n}\n\nconst skillOverlapScore = jdSkills.length ? Math.round((overlap / jdSkills.length) * 100) : 50;\nconst weightedSkillScore = Math.round(Math.min(weightHit, 1) * 100);\n\nconst levelMap = { entry: 1, mid: 2, senior: 3, lead: 4, principal: 5 };\nconst target = levelMap[$json.job_summary.experience_level] || 2;\nconst candYears = Number($json.candidate.years_experience || 0);\nconst candLevel = candYears >= 9 ? 5 : candYears >= 7 ? 4 : candYears >= 4 ? 3 : candYears >= 2 ? 2 : 1;\nconst expAlignment = Math.max(0, 100 - Math.abs(target - candLevel) * 20);\n\nreturn [{\n  json: {\n    ...$json,\n    pre_match: {\n      skill_overlap_score: Math.round((skillOverlapScore * 0.5) + (weightedSkillScore * 0.5)),\n      experience_alignment_score: expAlignment,\n      matched_skills: matched,\n      missing_skills: jdSkills.filter((s) => !candSkills.includes(s))\n    }\n  }\n}];"
+      },
+      "id": "17",
+      "name": "Deterministic Match Scoring",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2250,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a semantic talent matcher. Return STRICT JSON only:\n{\n  \"semantic_similarity\": 0-100,\n  \"why_candidate_matched\": \"string\",\n  \"missing_skills\": [\"string\"]\n}\n\nJob JSON:\n{{ JSON.stringify($json.job_summary) }}\n\nCandidate JSON:\n{{ JSON.stringify($json.candidate) }}"
+      },
+      "id": "18",
+      "name": "Semantic Matching LLM",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2470,
+        140
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function safeParse(text) {\n  if (!text || typeof text !== 'string') return null;\n  const cleaned = text.replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(cleaned); } catch {}\n  const m = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (m) {\n    try { return JSON.parse(m[0]); } catch {}\n  }\n  return null;\n}\n\nconst parsed = safeParse($json.text || $json.output || '');\nconst semantic = parsed && Number.isFinite(Number(parsed.semantic_similarity)) ? Number(parsed.semantic_similarity) : 50;\nconst pre = $json.pre_match || {};\n\nconst skillOverlap = Number(pre.skill_overlap_score || 50);\nconst expAlign = Number(pre.experience_alignment_score || 50);\nconst matchScore = Math.round(skillOverlap * 0.45 + expAlign * 0.25 + semantic * 0.30);\n\nconst missing = Array.isArray(parsed?.missing_skills) ? parsed.missing_skills : (pre.missing_skills || []);\nconst explanation = parsed?.why_candidate_matched || `Matched on ${Math.min((pre.matched_skills || []).length, 5)} core skills with ${semantic}% semantic relevance.`;\n\nreturn [{\n  json: {\n    ...$json,\n    match_result: {\n      match_score: Math.max(0, Math.min(100, matchScore)),\n      matched_skills: pre.matched_skills || [],\n      missing_skills: missing,\n      explanation\n    },\n    match_contract_valid: true\n  }\n}];"
+      },
+      "id": "19",
+      "name": "Match Result Schema Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2690,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Simulate a short recruiter-candidate conversation in 4 turns for interest discovery. Return STRICT JSON:\n{\n  \"conversation\": [\n    {\"speaker\":\"recruiter\",\"text\":\"...\"},\n    {\"speaker\":\"candidate\",\"text\":\"...\"}\n  ],\n  \"conversation_summary\": \"string\"\n}\n\nCandidate:\n{{ JSON.stringify($json.candidate) }}\n\nRole context:\n{{ JSON.stringify($json.job_summary) }}"
+      },
+      "id": "20",
+      "name": "Conversation Simulation LLM",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2910,
+        140
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an intent and sentiment classifier. Score the following simulated conversation. Return STRICT JSON only:\n{\n  \"sentiment_score\": 0-100,\n  \"intent_class\": \"high_interest|medium_interest|low_interest|not_interested\",\n  \"engagement_depth\": 0-100,\n  \"interest_score\": 0-100\n}\n\nConversation raw:\n{{ $json.text || $json.output || '' }}"
+      },
+      "id": "21",
+      "name": "Sentiment + Intent LLM",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        3130,
+        140
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function safeParse(text) {\n  if (!text || typeof text !== 'string') return null;\n  const cleaned = text.replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(cleaned); } catch {}\n  const m = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (m) {\n    try { return JSON.parse(m[0]); } catch {}\n  }\n  return null;\n}\n\nconst parsed = safeParse($json.text || $json.output || '');\nconst sentiment = Number(parsed?.sentiment_score ?? 60);\nconst depth = Number(parsed?.engagement_depth ?? 55);\nlet interest = Number(parsed?.interest_score ?? Math.round(sentiment * 0.6 + depth * 0.4));\ninterest = Math.max(0, Math.min(100, interest));\n\nlet intent = parsed?.intent_class;\nif (!intent) {\n  intent = interest >= 75 ? 'high_interest' : interest >= 55 ? 'medium_interest' : interest >= 35 ? 'low_interest' : 'not_interested';\n}\n\nconst conversationSummary = $json.conversation_summary || 'Candidate showed moderate interest with follow-up questions.';\n\nreturn [{\n  json: {\n    ...$json,\n    engagement_result: {\n      interest_score: interest,\n      sentiment_score: sentiment,\n      intent_class: intent,\n      engagement_depth: depth,\n      conversation_summary: conversationSummary\n    },\n    engagement_contract_valid: true\n  }\n}];"
+      },
+      "id": "22",
+      "name": "Engagement Result Schema Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3350,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const matchWeight = Number($json.weights?.match_weight ?? 0.7);\nconst interestWeight = Number($json.weights?.interest_weight ?? 0.3);\nconst matchScore = Number($json.match_result?.match_score ?? 0);\nconst interestScore = Number($json.engagement_result?.interest_score ?? 0);\n\nconst final = Math.round((matchScore * matchWeight) + (interestScore * interestWeight));\n\nreturn [{\n  json: {\n    request_id: $json.request_id,\n    job_id: $json.job_id,\n    shortlist_size: $json.shortlist_size,\n    job_summary: $json.job_summary,\n    candidate: {\n      name: $json.candidate.name,\n      match_score: Math.max(0, Math.min(100, matchScore)),\n      interest_score: Math.max(0, Math.min(100, interestScore)),\n      final_score: Math.max(0, Math.min(100, final)),\n      explanation: $json.match_result?.explanation || 'Match computed from skills, experience, and semantic relevance.',\n      conversation_summary: $json.engagement_result?.conversation_summary || 'No conversation summary available.'\n    }\n  }\n}];"
+      },
+      "id": "23",
+      "name": "Final Scoring",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3570,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map((i) => i.json);\nif (!items.length) {\n  return [{ json: { job_summary: {}, candidates: [] } }];\n}\n\nitems.sort((a, b) => b.candidate.final_score - a.candidate.final_score);\nconst topN = Math.max(1, Number(items[0].shortlist_size || 10));\nconst candidates = items.slice(0, topN).map((i) => i.candidate);\n\nreturn [{\n  json: {\n    job_summary: items[0].job_summary,\n    candidates\n  }\n}];"
+      },
+      "id": "24",
+      "name": "Ranking Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3790,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "25",
+      "name": "Respond Final Output",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        4010,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {}
+      },
+      "id": "26",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        560
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "YOUR_GEMINI_API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "JD Parser",
+        "height": 520,
+        "width": 840,
+        "color": 3
+      },
+      "id": "27",
+      "name": "Group JD Parser",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        520,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Candidate Fetcher",
+        "height": 420,
+        "width": 700,
+        "color": 4
+      },
+      "id": "28",
+      "name": "Group Candidate Fetcher",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Matching Engine",
+        "height": 420,
+        "width": 700,
+        "color": 5
+      },
+      "id": "29",
+      "name": "Group Matching Engine",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Engagement Engine",
+        "height": 420,
+        "width": 700,
+        "color": 6
+      },
+      "id": "30",
+      "name": "Group Engagement Engine",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2860,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Ranking Engine",
+        "height": 320,
+        "width": 520,
+        "color": 7
+      },
+      "id": "31",
+      "name": "Group Ranking Engine",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        40
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Has JD Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has JD Text?": {
+      "main": [
+        [
+          {
+            "node": "JD Parser LLM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Missing JD Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Missing JD Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Missing JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD Parser LLM": {
+      "main": [
+        [
+          {
+            "node": "JD Schema Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD Schema Contract": {
+      "main": [
+        [
+          {
+            "node": "JD Contract Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD Contract Valid?": {
+      "main": [
+        [
+          {
+            "node": "Candidate Fetcher (Mock/API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build JD Contract Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build JD Contract Error": {
+      "main": [
+        [
+          {
+            "node": "Respond JD Contract Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate Fetcher (Mock/API)": {
+      "main": [
+        [
+          {
+            "node": "Candidate Pool Non-Empty?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate Pool Non-Empty?": {
+      "main": [
+        [
+          {
+            "node": "Fan Out Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Empty Candidate Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Empty Candidate Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Empty Candidate Pool",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan Out Candidates": {
+      "main": [
+        [
+          {
+            "node": "Candidate Schema Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidate Schema Contract": {
+      "main": [
+        [
+          {
+            "node": "Deterministic Match Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deterministic Match Scoring": {
+      "main": [
+        [
+          {
+            "node": "Semantic Matching LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Semantic Matching LLM": {
+      "main": [
+        [
+          {
+            "node": "Match Result Schema Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Result Schema Contract": {
+      "main": [
+        [
+          {
+            "node": "Conversation Simulation LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Simulation LLM": {
+      "main": [
+        [
+          {
+            "node": "Sentiment + Intent LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sentiment + Intent LLM": {
+      "main": [
+        [
+          {
+            "node": "Engagement Result Schema Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Engagement Result Schema Contract": {
+      "main": [
+        [
+          {
+            "node": "Final Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Scoring": {
+      "main": [
+        [
+          {
+            "node": "Ranking Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ranking Engine": {
+      "main": [
+        [
+          {
+            "node": "Respond Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

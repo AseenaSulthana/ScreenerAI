@@ -1,0 +1,24 @@
+{
+  "job_id": "job-2025-backend-senior-001",
+  "title": "Senior Backend Engineer (Python/AWS)",
+  "jd_text": "We are seeking a highly skilled Senior Backend Engineer to join our growing team. You will design, develop, and maintain scalable backend systems serving millions of requests daily.\n\n## Responsibilities:\n- Design and implement high-performance REST APIs using Python\n- Architect microservices on AWS (EC2, Lambda, RDS, S3)\n- Optimize database queries and implement caching strategies (PostgreSQL, Redis)\n- Write clean, maintainable code with comprehensive unit tests\n- Collaborate with frontend engineers and product teams\n- Conduct code reviews and mentor junior engineers\n- Participate in on-call rotation for production support\n\n## Requirements:\n- 5+ years of professional software engineering experience\n- Strong proficiency in Python (3.8+)\n- Deep experience with PostgreSQL and relational databases\n- Hands-on AWS experience (EC2, Lambda, RDS, S3, CloudFormation)\n- Experience with Docker and container orchestration (Kubernetes nice-to-have)\n- Understanding of distributed systems and microservices architecture\n- Experience with CI/CD pipelines and DevOps practices\n- Excellent problem-solving skills and attention to detail\n- Strong communication and teamwork abilities\n\n## Nice-to-Have:\n- Experience with message queues (RabbitMQ, Kafka)\n- Knowledge of GraphQL\n- Experience with Terraform or Infrastructure-as-Code\n- Open source contributions\n- Prior experience scaling systems to high throughput\n\n## Location: Remote (US/Canada preferred, open to globals)\n## Compensation: $150k-$200k + equity",
+  "must_have_skills": [
+    "Python",
+    "PostgreSQL",
+    "AWS",
+    "REST APIs",
+    "Docker"
+  ],
+  "nice_to_have_skills": [
+    "Kubernetes",
+    "Terraform",
+    "Kafka",
+    "GraphQL",
+    "Redis"
+  ],
+  "location": "Remote",
+  "min_years_experience": 5,
+  "seniority_level": "senior",
+  "shortlist_size": 10,
+  "outreach_enabled": true
+}

@@ -1,0 +1,1178 @@
+{
+  "name": "Screener AI v2 - Resume, Matching, Questions, Email, Response Scoring",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "recruitment/v2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Recruitment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst binaryKeys = Object.keys($binary || {});\nconst eventType = String(body.event_type || (body.answers ? 'candidate_response' : 'resume_applied')).trim();\nconst resumeText = String(body.resume_text || body.resume || body.cover_text || '').trim();\nconst candidateId = String(body.candidate_id || body.email || `cand-${Date.now()}`).trim();\nconst jobId = String(body.job_id || body.jd_id || '').trim();\n\nreturn [{\n  json: {\n    request_id: body.request_id || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,\n    event_type: eventType,\n    candidate_id: candidateId,\n    candidate_name: String(body.candidate_name || body.name || '').trim(),\n    email: String(body.email || body.candidate_email || '').trim(),\n    phone: String(body.phone || '').trim(),\n    job_id: jobId,\n    jd_text: String(body.jd_text || '').trim(),\n    resume_text: resumeText,\n    answers: body.answers || body.response_answers || {},\n    source: String(body.source || 'webhook').trim(),\n    resume_binary_key: binaryKeys[0] || '',\n    response_base_url: String(body.response_base_url || $env.N8N_PUBLIC_BASE_URL || '').trim(),\n    shortlist_size: Number(body.shortlist_size || 10),\n    weights: { match: 0.6, interest: 0.4 },\n    received_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "2",
+      "name": "Normalize Intake",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "query": "CREATE EXTENSION IF NOT EXISTS vector;\n\nCREATE TABLE IF NOT EXISTS recruitment_jds (\n  job_id text PRIMARY KEY,\n  title text,\n  jd_text text NOT NULL,\n  parsed_json jsonb,\n  jd_embedding vector(16),\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS recruitment_resumes (\n  candidate_id text PRIMARY KEY,\n  candidate_name text NOT NULL,\n  email text,\n  phone text,\n  resume_text text NOT NULL,\n  parsed_json jsonb,\n  resume_embedding vector(16),\n  source text DEFAULT 'webhook',\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS recruitment_evaluations (\n  evaluation_id bigserial PRIMARY KEY,\n  candidate_id text NOT NULL,\n  job_id text NOT NULL,\n  candidate_name text,\n  match_score numeric(5,2),\n  interest_score numeric(5,2),\n  final_score numeric(5,2),\n  match_explanation text,\n  interest_explanation text,\n  skill_overlap jsonb,\n  skill_gap jsonb,\n  questions jsonb,\n  responses jsonb,\n  intent_level text,\n  recommended boolean DEFAULT false,\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now(),\n  UNIQUE (candidate_id, job_id)\n);"
+      },
+      "id": "3",
+      "name": "Bootstrap Postgres Schema",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "NeonDB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "route-resume",
+              "leftValue": "={{ $json.event_type }}",
+              "rightValue": "resume_applied",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4",
+      "name": "Resume Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "resume-present",
+              "leftValue": "={{ $json.resume_text || $json.resume_binary_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5",
+      "name": "Resume Data Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [920, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { error: 'missing_resume_data', message: 'resume_text or a resume binary attachment is required', request_id: $json.request_id, candidate_id: $json.candidate_id } }];"
+      },
+      "id": "6",
+      "name": "Build Resume Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "7",
+      "name": "Respond Resume Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1380, 260]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-binary",
+              "leftValue": "={{ $json.resume_binary_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "Has Resume Binary?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1160, 120]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "={{ $json.resume_binary_key }}",
+        "options": {}
+      },
+      "id": "9",
+      "name": "Extract Resume PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [1380, -40],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, resume_text: String($json.text || $json.resume_text || '').trim() } }];"
+      },
+      "id": "10",
+      "name": "Resume Text From Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, -40]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, resume_text: String($json.resume_text || '').trim() } }];"
+      },
+      "id": "11",
+      "name": "Resume Text From Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1380, 140]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Parse this resume into STRICT JSON only:\n{\n  \"candidate_name\": \"string\",\n  \"email\": \"string\",\n  \"phone\": \"string\",\n  \"skills\": [\"string\"],\n  \"years_experience\": 0,\n  \"projects\": [\"string\"],\n  \"current_title\": \"string\",\n  \"summary\": \"string\"\n}\n\nRules:\n- Do not invent skills that are not present in the resume.\n- Normalize names and skills.\n- If a field is missing, use empty string or empty array.\n- Return JSON only.\n\nResume:\n{{ $json.resume_text }}"
+      },
+      "id": "12",
+      "name": "Resume Parser Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [1820, 40],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {}
+      },
+      "id": "13",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1820, 320],
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "YOUR_GEMINI_API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function safeParse(text) {\n  if (!text || typeof text !== 'string') return null;\n  const cleaned = text.replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(cleaned); } catch {}\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch {}\n  }\n  return null;\n}\n\nfunction fallbackProfile(text) {\n  const low = String(text || '').toLowerCase();\n  const skillBank = ['python','javascript','typescript','node.js','react','llm','gemini','fastapi','aws','gcp','azure','postgres','vector','pgvector','docker','kubernetes','etl','api','automation','n8n'];\n  const skills = skillBank.filter((skill) => low.includes(skill.replace('.js', ''))).slice(0, 12);\n  const experienceYears = Math.min(20, Math.max(0, (low.match(/(\\d+)\\+?\\s+years?/g) || ['3 years'])[0].match(/\\d+/)?.[0] ? Number((low.match(/(\\d+)\\+?\\s+years?/g) || ['3 years'])[0].match(/\\d+/)[0]) : 3));\n  return { candidate_name: $json.candidate_name || 'Unknown Candidate', email: $json.email || '', phone: $json.phone || '', skills, years_experience: experienceYears, projects: [], current_title: '', summary: 'Parsed by fallback profile extractor' };\n}\n\nconst parsed = safeParse($json.text || $json.output || '');\nconst profile = parsed && Array.isArray(parsed.skills) ? parsed : fallbackProfile($json.resume_text);\nconst normalizedSkills = [...new Set((profile.skills || []).map((s) => String(s).trim()).filter(Boolean))];\nconst searchableText = [profile.candidate_name, profile.current_title, profile.summary, (profile.projects || []).join(' '), normalizedSkills.join(' ')].filter(Boolean).join(' ');\n\nreturn [{\n  json: {\n    ...$json,\n    resume_profile: {\n      candidate_name: String(profile.candidate_name || $json.candidate_name || 'Unknown Candidate').trim(),\n      email: String(profile.email || $json.email || '').trim(),\n      phone: String(profile.phone || $json.phone || '').trim(),\n      skills: normalizedSkills,\n      years_experience: Number(profile.years_experience || 0),\n      projects: Array.isArray(profile.projects) ? profile.projects : [],\n      current_title: String(profile.current_title || '').trim(),\n      summary: String(profile.summary || '').trim()\n    },\n    resume_search_text: searchableText,\n    resume_contract_valid: Boolean(profile.candidate_name)\n  }\n}];"
+      },
+      "id": "14",
+      "name": "Resume Schema Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 40]
+    },
+    {
+      "parameters": {
+        "jsCode": "function makeVector(text, size = 16) {\n  const vector = new Array(size).fill(0);\n  const tokens = String(text || '').toLowerCase().split(/\\W+/).filter(Boolean);\n  for (const token of tokens) {\n    let hash = 0;\n    for (let i = 0; i < token.length; i++) hash = ((hash << 5) - hash) + token.charCodeAt(i);\n    const index = Math.abs(hash) % size;\n    vector[index] += 1;\n  }\n  const norm = Math.sqrt(vector.reduce((sum, value) => sum + (value * value), 0)) || 1;\n  return vector.map((value) => Number((value / norm).toFixed(6)));\n}\n\nconst embedding = makeVector($json.resume_search_text || $json.resume_text || '', 16);\nconst embeddingLiteral = '[' + embedding.join(',') + ']';\nconst profileSql = JSON.stringify($json.resume_profile).replace(/'/g, \"''\");\n\nreturn [{\n  json: {\n    ...$json,\n    resume_embedding: embeddingLiteral,\n    resume_profile_sql: profileSql\n  }\n}];"
+      },
+      "id": "15",
+      "name": "Resume Embedding Vector",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2260, 40]
+    },
+    {
+      "parameters": {
+        "query": "INSERT INTO recruitment_resumes (candidate_id, candidate_name, email, phone, resume_text, parsed_json, resume_embedding, source, updated_at) VALUES ( '{{$json.candidate_id}}', '{{$json.resume_profile.candidate_name}}', '{{$json.resume_profile.email}}', '{{$json.resume_profile.phone}}', '{{($json.resume_text || '').replace(/'/g, \"''\")}}', ('{{$json.resume_profile_sql}}')::jsonb, '{{$json.resume_embedding}}'::vector, '{{$json.source}}', now() ) ON CONFLICT (candidate_id) DO UPDATE SET candidate_name = EXCLUDED.candidate_name, email = EXCLUDED.email, phone = EXCLUDED.phone, resume_text = EXCLUDED.resume_text, parsed_json = EXCLUDED.parsed_json, resume_embedding = EXCLUDED.resume_embedding, source = EXCLUDED.source, updated_at = now() RETURNING *;"
+      },
+      "id": "16",
+      "name": "Store Resume in Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2480, 40],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "NeonDB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-jd-id",
+              "leftValue": "={{ $json.job_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "17",
+      "name": "JD Id Provided?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2700, 40]
+    },
+    {
+      "parameters": {
+        "query": "SELECT job_id, title, jd_text, parsed_json, jd_embedding, 100 - ROUND((jd_embedding <=> '{{$json.resume_embedding}}'::vector) * 100, 2) AS vector_similarity FROM recruitment_jds WHERE job_id = '{{$json.job_id}}' LIMIT 1;"
+      },
+      "id": "18",
+      "name": "Load JD By Id",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2920, -100],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "NeonDB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "query": "SELECT job_id, title, jd_text, parsed_json, jd_embedding, 100 - ROUND((jd_embedding <=> '{{$json.resume_embedding}}'::vector) * 100, 2) AS vector_similarity FROM recruitment_jds ORDER BY jd_embedding <=> '{{$json.resume_embedding}}'::vector ASC LIMIT 1;"
+      },
+      "id": "19",
+      "name": "Find JD By Similarity",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2920, 140],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "NeonDB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, job_context: { job_id: $json.job_id, title: $json.title || '', jd_text: $json.jd_text || '', parsed_json: $json.parsed_json || {}, vector_similarity: Number($json.vector_similarity || 0) } } }];"
+      },
+      "id": "20",
+      "name": "Normalize JD Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3140, 40]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "jd-found",
+              "leftValue": "={{ $json.job_context.job_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "21",
+      "name": "JD Match Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [3360, 40]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { error: 'empty_jd_match', message: 'No JD record was found in Postgres for the provided job_id or similarity search', candidate_id: $json.candidate_id, request_id: $json.request_id } }];"
+      },
+      "id": "22",
+      "name": "Build JD Match Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3580, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "23",
+      "name": "Respond JD Match Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [3800, 180]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Compare the JD and resume and return STRICT JSON only:\n{\n  \"match_score\": 0,\n  \"skill_overlap\": [\"string\"],\n  \"skill_gap\": [\"string\"],\n  \"match_explanation\": \"string\",\n  \"skill_score\": 0,\n  \"experience_score\": 0,\n  \"semantic_score\": 0\n}\n\nScoring rules:\n- skill_score reflects overlap between required and present skills.\n- experience_score reflects experience alignment with the JD.\n- semantic_score reflects overall semantic fit and context relevance.\n- match_score must be computed as 40% skill_score + 30% experience_score + 30% semantic_score.\n- Do not invent skills. Use only observable evidence.\n\nJD:\n{{ JSON.stringify($json.job_context) }}\n\nResume:\n{{ JSON.stringify($json.resume_profile) }}"
+      },
+      "id": "24",
+      "name": "Match Comparison Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [3580, 40],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function safeParse(text) {\n  if (!text || typeof text !== 'string') return null;\n  const cleaned = text.replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(cleaned); } catch {}\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch {}\n  }\n  return null;\n}\n\nconst parsed = safeParse($json.text || $json.output || '');\nconst skillOverlap = Array.isArray(parsed?.skill_overlap) ? parsed.skill_overlap : ($json.resume_profile.skills || []).filter((skill) => String(($json.job_context.parsed_json?.skills || []).map((s) => s.name || s).join(' ')).toLowerCase().includes(String(skill).toLowerCase()));\nconst skillGap = Array.isArray(parsed?.skill_gap) ? parsed.skill_gap : [];\nconst skillScore = Number(parsed?.skill_score ?? Math.min(100, skillOverlap.length * 20));\nconst expScore = Number(parsed?.experience_score ?? Math.max(0, 100 - Math.abs((Number($json.resume_profile.years_experience || 0)) - Number($json.job_context.parsed_json?.min_years_experience || 3)) * 20));\nconst semanticScore = Number(parsed?.semantic_score ?? $json.job_context.vector_similarity ?? 50);\nconst matchScore = Math.max(0, Math.min(100, Math.round(skillScore * 0.4 + expScore * 0.3 + semanticScore * 0.3)));\n\nreturn [{\n  json: {\n    ...$json,\n    match_result: {\n      match_score: matchScore,\n      match_explanation: parsed?.match_explanation || 'Fallback match based on resume skills, experience alignment, and JD similarity.',\n      skill_overlap: skillOverlap,\n      skill_gap: skillGap,\n      skill_score: skillScore,\n      experience_score: expScore,\n      semantic_score: semanticScore\n    },\n    match_contract_valid: true\n  }\n}];"
+      },
+      "id": "25",
+      "name": "Match Result Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3800, 40]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate 5 to 8 highly specific screening questions based on the JD and the resume gaps. Return STRICT JSON only:\n{\n  \"questions\": [\n    {\"question\": \"string\", \"type\": \"skill_validation|experience_deep_dive|commitment_interest|availability_intent\", \"reason\": \"string\"}\n  ]\n}\n\nRules:\n- Questions must be tailored to missing skills, weak experience areas, or likely risk points.\n- Do not generate generic interview questions.\n- Keep the list between 5 and 8 questions.\n- Make sure at least one question addresses commitment/interest and one addresses availability.\n\nJD:\n{{ JSON.stringify($json.job_context) }}\n\nResume gaps:\n{{ JSON.stringify($json.match_result.skill_gap) }}\n\nResume profile:\n{{ JSON.stringify($json.resume_profile) }}"
+      },
+      "id": "26",
+      "name": "Question Generator Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [4020, 40],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function safeParse(text) {\n  if (!text || typeof text !== 'string') return null;\n  const cleaned = text.replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(cleaned); } catch {}\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch {}\n  }\n  return null;\n}\n\nconst parsed = safeParse($json.text || $json.output || '');\nconst questions = Array.isArray(parsed?.questions) ? parsed.questions.slice(0, 8) : [];\nconst skillGap = $json.match_result.skill_gap || [];\nconst fallbackQuestions = [];\nfor (const gap of skillGap.slice(0, 3)) {\n  fallbackQuestions.push({ question: `Describe your hands-on experience with ${gap} and how you have used it in a production setting.`, type: 'skill_validation', reason: 'Validates a missing skill gap' });\n}\nfallbackQuestions.push({ question: 'Walk us through the most relevant project from your resume for this role and what you personally owned.', type: 'experience_deep_dive', reason: 'Checks depth of experience' });\nfallbackQuestions.push({ question: 'Why are you interested in this role right now, and what would make this opportunity a priority for you?', type: 'commitment_interest', reason: 'Measures commitment and intent' });\nfallbackQuestions.push({ question: 'If we were to move quickly, what is your realistic availability window to start?', type: 'availability_intent', reason: 'Checks availability' });\n\nconst finalQuestions = (questions.length >= 5 ? questions : fallbackQuestions).slice(0, 8);\nconst questionsSql = JSON.stringify(finalQuestions).replace(/'/g, \"''\");\n\nreturn [{\n  json: {\n    ...$json,\n    generated_questions: finalQuestions,\n    generated_questions_sql: questionsSql,\n    questions_contract_valid: finalQuestions.length >= 5 && finalQuestions.length <= 8\n  }\n}];"
+      },
+      "id": "27",
+      "name": "Question Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4240, 40]
+    },
+    {
+      "parameters": {
+        "query": "INSERT INTO recruitment_evaluations (candidate_id, job_id, candidate_name, match_score, match_explanation, skill_overlap, skill_gap, questions, recommended, updated_at) VALUES ('{{$json.candidate_id}}', '{{$json.job_context.job_id}}', '{{$json.resume_profile.candidate_name}}', {{$json.match_result.match_score}}, '{{$json.match_result.match_explanation.replace(/'/g, \"''\")}}', ('{{$json.match_result.skill_overlap_sql || JSON.stringify($json.match_result.skill_overlap).replace(/'/g, \"''\")}}')::jsonb, ('{{$json.match_result.skill_gap_sql || JSON.stringify($json.match_result.skill_gap).replace(/'/g, \"''\")}}')::jsonb, ('{{$json.generated_questions_sql}}')::jsonb, false, now()) ON CONFLICT (candidate_id, job_id) DO UPDATE SET candidate_name = EXCLUDED.candidate_name, match_score = EXCLUDED.match_score, match_explanation = EXCLUDED.match_explanation, skill_overlap = EXCLUDED.skill_overlap, skill_gap = EXCLUDED.skill_gap, questions = EXCLUDED.questions, updated_at = now() RETURNING *;"
+      },
+      "id": "28",
+      "name": "Seed Evaluation Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [4460, 40],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "NeonDB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const questions = $json.generated_questions || [];\nconst responseLink = `${$json.response_base_url || ''}/webhook/recruitment/v2?event_type=candidate_response&candidate_id=${encodeURIComponent($json.candidate_id)}&job_id=${encodeURIComponent($json.job_context.job_id)}`;\nconst questionList = questions.map((item, index) => `<li><strong>Q${index + 1}:</strong> ${item.question}</li>`).join('');\n\nreturn [{\n  json: {\n    ...$json,\n    response_link: responseLink,\n    email_subject: `Next step for ${$json.resume_profile.candidate_name} - ${$json.job_context.title || 'Your application'}`,\n    email_html: `<html><body><p>Hi ${$json.resume_profile.candidate_name},</p><p>Thanks for your application for <strong>${$json.job_context.title || 'this role'}</strong>.</p><p>Please complete the short follow-up form here:</p><p><a href='${responseLink}'>${responseLink}</a></p><p>Questions:</p><ol>${questionList}</ol><p>Best,<br/>Recruiting Automation Agent</p></body></html>`\n  }\n}];"
+      },
+      "id": "29",
+      "name": "Build Email Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4680, 40]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.resume_profile.email }}",
+        "subject": "={{ $json.email_subject }}",
+        "message": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "30",
+      "name": "Send Candidate Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [4900, 40],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "YOUR_GMAIL_OAUTH_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { status: 'questions_sent', candidate_name: $json.resume_profile.candidate_name, candidate_id: $json.candidate_id, job_id: $json.job_context.job_id, match_score: $json.match_result.match_score, questions_sent: $json.generated_questions.length, response_link: $json.response_link } }];"
+      },
+      "id": "31",
+      "name": "Resume Intake Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [5120, 40]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "32",
+      "name": "Respond Resume Intake",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [5340, 40]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, response_complete: Array.isArray($json.answers) ? $json.answers.length > 0 : Object.keys($json.answers || {}).length > 0 } }];"
+      },
+      "id": "33",
+      "name": "Response Payload Valid?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 620]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "response-valid",
+              "leftValue": "={{ $json.response_complete }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "34",
+      "name": "Response Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1140, 620]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { error: 'incomplete_form_submission', message: 'candidate response answers are required', request_id: $json.request_id, candidate_id: $json.candidate_id, job_id: $json.job_id } }];"
+      },
+      "id": "35",
+      "name": "Build Response Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1380, 760]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "36",
+      "name": "Respond Response Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1600, 760]
+    },
+    {
+      "parameters": {
+        "query": "SELECT candidate_id, job_id, candidate_name, match_score, match_explanation, skill_overlap, skill_gap, questions, responses, interest_score, interest_explanation, final_score, intent_level, recommended FROM recruitment_evaluations WHERE candidate_id = '{{$json.candidate_id}}' AND job_id = '{{$json.job_id}}' ORDER BY updated_at DESC LIMIT 1;"
+      },
+      "id": "37",
+      "name": "Load Evaluation Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1380, 620],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "NeonDB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Evaluate the candidate's form responses and return STRICT JSON only:\n{\n  \"interest_score\": 0,\n  \"interest_explanation\": \"string\",\n  \"intent_level\": \"high|medium|low\",\n  \"intent_clarity\": 0,\n  \"engagement_depth\": 0,\n  \"role_alignment\": 0\n}\n\nScoring rules:\n- intent_clarity = 40%\n- engagement_depth = 30%\n- role_alignment = 30%\n- interest_score must equal the weighted total.\n- Use only the question/answer evidence.\n- Mention any availability or commitment signals explicitly.\n\nCandidate profile:\n{{ JSON.stringify($json) }}"
+      },
+      "id": "38",
+      "name": "Interest Scoring Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [1600, 620],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "function safeParse(text) {\n  if (!text || typeof text !== 'string') return null;\n  const cleaned = text.replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(cleaned); } catch {}\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch {}\n  }\n  return null;\n}\n\nconst parsed = safeParse($json.text || $json.output || '');\nconst answerText = JSON.stringify($json.answers || {});\nconst textLength = answerText.length;\nconst intentClarity = Number(parsed?.intent_clarity ?? Math.min(100, Math.max(20, Math.round(textLength / 4))));\nconst engagementDepth = Number(parsed?.engagement_depth ?? Math.min(100, Math.max(20, Math.round(textLength / 3))));\nconst roleAlignment = Number(parsed?.role_alignment ?? 55);\nconst interestScore = Math.max(0, Math.min(100, Number(parsed?.interest_score ?? Math.round(intentClarity * 0.4 + engagementDepth * 0.3 + roleAlignment * 0.3))));\nconst intentLevel = parsed?.intent_level || (interestScore >= 75 ? 'high' : interestScore >= 50 ? 'medium' : 'low');\n\nreturn [{\n  json: {\n    ...$json,\n    interest_result: {\n      interest_score: interestScore,\n      interest_explanation: parsed?.interest_explanation || 'Fallback interest scoring used because Gemini output was unavailable.',\n      intent_level: intentLevel,\n      intent_clarity: intentClarity,\n      engagement_depth: engagementDepth,\n      role_alignment: roleAlignment\n    },\n    interest_contract_valid: true\n  }\n}];"
+      },
+      "id": "39",
+      "name": "Interest Result Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1820, 620]
+    },
+    {
+      "parameters": {
+        "jsCode": "const matchScore = Number($json.match_score || $json.match_result?.match_score || 0);\nconst interestScore = Number($json.interest_result?.interest_score || 0);\nconst finalScore = Math.max(0, Math.min(100, Math.round(matchScore * 0.6 + interestScore * 0.4)));\nconst recommended = finalScore >= 75 && matchScore >= 60 && interestScore >= 55;\n\nreturn [{\n  json: {\n    candidate_name: $json.candidate_name || $json.candidate_id || 'Unknown Candidate',\n    match_score: Math.round(matchScore),\n    interest_score: Math.round(interestScore),\n    final_score: finalScore,\n    match_explanation: $json.match_explanation || $json.match_result?.match_explanation || 'Match evaluation completed with fallback logic.',\n    interest_explanation: $json.interest_result?.interest_explanation || 'Interest evaluation completed with fallback logic.',\n    recommended,\n    intent_level: $json.interest_result?.intent_level || 'low',\n    candidate_id: $json.candidate_id,\n    job_id: $json.job_id,\n    responses: $json.answers || {},\n    questions: $json.questions || [],\n    updated_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "40",
+      "name": "Final Ranking Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 620]
+    },
+    {
+      "parameters": {
+        "query": "INSERT INTO recruitment_evaluations (candidate_id, job_id, candidate_name, match_score, interest_score, final_score, match_explanation, interest_explanation, responses, intent_level, recommended, updated_at) VALUES ('{{$json.candidate_id}}', '{{$json.job_id}}', '{{$json.candidate_name.replace(/'/g, \"''\")}}', {{$json.match_score}}, {{$json.interest_score}}, {{$json.final_score}}, '{{$json.match_explanation.replace(/'/g, \"''\")}}', '{{$json.interest_explanation.replace(/'/g, \"''\")}}', ('{{JSON.stringify($json.responses).replace(/'/g, \"''\")}}')::jsonb, '{{$json.intent_level}}', {{$json.recommended}}, now()) ON CONFLICT (candidate_id, job_id) DO UPDATE SET candidate_name = EXCLUDED.candidate_name, match_score = EXCLUDED.match_score, interest_score = EXCLUDED.interest_score, final_score = EXCLUDED.final_score, match_explanation = EXCLUDED.match_explanation, interest_explanation = EXCLUDED.interest_explanation, responses = EXCLUDED.responses, intent_level = EXCLUDED.intent_level, recommended = EXCLUDED.recommended, updated_at = now() RETURNING *;"
+      },
+      "id": "41",
+      "name": "Store Final Evaluation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2260, 620],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "NeonDB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "42",
+      "name": "Respond Final Output",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2480, 620]
+    },
+    {
+      "parameters": {
+        "content": "## Resume Processor\nResume upload, parsing, embedding, JD lookup, and match scoring",
+        "height": 260,
+        "width": 820,
+        "color": 3
+      },
+      "id": "43",
+      "name": "Group Resume Processor",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1500, -180]
+    },
+    {
+      "parameters": {
+        "content": "## Question Generator + Email Sender\nCandidate-specific follow-up questions and outreach email",
+        "height": 220,
+        "width": 820,
+        "color": 4
+      },
+      "id": "44",
+      "name": "Group Question Email",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3880, -180]
+    },
+    {
+      "parameters": {
+        "content": "## Response Processor + Scoring Engine\nCandidate form submission, interest scoring, and final ranking",
+        "height": 240,
+        "width": 760,
+        "color": 5
+      },
+      "id": "45",
+      "name": "Group Response Processor",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1180, 500]
+    }
+  ],
+  "connections": {
+    "Recruitment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Intake": {
+      "main": [
+        [
+          {
+            "node": "Bootstrap Postgres Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bootstrap Postgres Schema": {
+      "main": [
+        [
+          {
+            "node": "Resume Event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Event?": {
+      "main": [
+        [
+          {
+            "node": "Resume Data Present?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Payload Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Data Present?": {
+      "main": [
+        [
+          {
+            "node": "Has Resume Binary?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Resume Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Resume Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Resume Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Resume Binary?": {
+      "main": [
+        [
+          {
+            "node": "Extract Resume PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resume Text From Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Resume PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Resume Text From Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Text From Binary": {
+      "main": [
+        [
+          {
+            "node": "Resume Parser Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Text From Payload": {
+      "main": [
+        [
+          {
+            "node": "Resume Parser Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Parser Gemini": {
+      "main": [
+        [
+          {
+            "node": "Resume Schema Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Schema Contract": {
+      "main": [
+        [
+          {
+            "node": "Resume Embedding Vector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Embedding Vector": {
+      "main": [
+        [
+          {
+            "node": "Store Resume in Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Resume in Postgres": {
+      "main": [
+        [
+          {
+            "node": "JD Id Provided?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD Id Provided?": {
+      "main": [
+        [
+          {
+            "node": "Load JD By Id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find JD By Similarity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load JD By Id": {
+      "main": [
+        [
+          {
+            "node": "Normalize JD Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find JD By Similarity": {
+      "main": [
+        [
+          {
+            "node": "Normalize JD Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize JD Context": {
+      "main": [
+        [
+          {
+            "node": "JD Match Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD Match Found?": {
+      "main": [
+        [
+          {
+            "node": "Match Comparison Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build JD Match Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build JD Match Error": {
+      "main": [
+        [
+          {
+            "node": "Respond JD Match Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Comparison Gemini": {
+      "main": [
+        [
+          {
+            "node": "Match Result Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Result Contract": {
+      "main": [
+        [
+          {
+            "node": "Question Generator Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Question Generator Gemini": {
+      "main": [
+        [
+          {
+            "node": "Question Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Question Contract": {
+      "main": [
+        [
+          {
+            "node": "Seed Evaluation Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seed Evaluation Record": {
+      "main": [
+        [
+          {
+            "node": "Build Email Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Candidate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Candidate Email": {
+      "main": [
+        [
+          {
+            "node": "Resume Intake Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Intake Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Resume Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Payload Valid?": {
+      "main": [
+        [
+          {
+            "node": "Response Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Complete?": {
+      "main": [
+        [
+          {
+            "node": "Load Evaluation Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Response Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Response Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Evaluation Context": {
+      "main": [
+        [
+          {
+            "node": "Interest Scoring Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interest Scoring Gemini": {
+      "main": [
+        [
+          {
+            "node": "Interest Result Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Chat Model",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interest Result Contract": {
+      "main": [
+        [
+          {
+            "node": "Final Ranking Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Ranking Engine": {
+      "main": [
+        [
+          {
+            "node": "Store Final Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Final Evaluation": {
+      "main": [
+        [
+          {
+            "node": "Respond Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

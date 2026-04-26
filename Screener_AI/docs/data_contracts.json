@@ -1,0 +1,678 @@
+{
+  "version": "1.0.0",
+  "description": "Data contracts and schemas for AI Talent Scouting & Engagement Agent",
+  "timestamp": "2025-04-25T00:00:00Z",
+  
+  "candidate_schema": {
+    "type": "object",
+    "description": "Normalized candidate profile structure",
+    "required": ["candidate_id", "name", "email"],
+    "properties": {
+      "candidate_id": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_-]{8,}$",
+        "description": "Unique candidate identifier (auto-generated or from source)"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 255,
+        "description": "Full name of candidate"
+      },
+      "email": {
+        "type": "string",
+        "format": "email",
+        "description": "Primary contact email"
+      },
+      "phone": {
+        "type": "string",
+        "pattern": "^[+]?[0-9\\-()\\s]{10,}$",
+        "description": "Phone number (optional, normalized format)"
+      },
+      "resume_text": {
+        "type": "string",
+        "description": "Full extracted resume text (from PDF or document)"
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "List of extracted technical skills"
+      },
+      "years_experience": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 70,
+        "description": "Years of professional experience (inferred)"
+      },
+      "current_title": {
+        "type": "string",
+        "description": "Current or most recent job title"
+      },
+      "current_company": {
+        "type": "string",
+        "description": "Current or most recent employer"
+      },
+      "location": {
+        "type": "string",
+        "description": "Current location (city, state or country)"
+      },
+      "resume_drive_file_id": {
+        "type": "string",
+        "description": "Google Drive file ID for original resume PDF"
+      },
+      "source": {
+        "type": "string",
+        "enum": ["drive", "sheets", "api"],
+        "description": "Data source (Drive folder, Sheets registry, or external API)"
+      },
+      "last_contacted_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO 8601 timestamp of last contact"
+      },
+      "last_interest_score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Last computed Interest Score (if previously engaged)"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When record was first indexed"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When record was last updated"
+      }
+    }
+  },
+
+  "job_description_schema": {
+    "type": "object",
+    "description": "Job description structure for matching",
+    "required": ["job_id", "title", "jd_text"],
+    "properties": {
+      "job_id": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_-]{5,}$",
+        "description": "Unique job identifier"
+      },
+      "title": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 255,
+        "description": "Job title"
+      },
+      "jd_text": {
+        "type": "string",
+        "minLength": 50,
+        "description": "Full job description text"
+      },
+      "must_have_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1,
+        "description": "Required technical skills"
+      },
+      "nice_to_have_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Preferred but not required skills"
+      },
+      "location": {
+        "type": "string",
+        "description": "Job location or 'Remote'"
+      },
+      "min_years_experience": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 50,
+        "description": "Minimum years of experience required"
+      },
+      "seniority_level": {
+        "type": "string",
+        "enum": ["entry", "mid", "senior", "principal", "lead"],
+        "description": "Experience level required"
+      },
+      "department": {
+        "type": "string",
+        "description": "Department or team"
+      },
+      "shortlist_size": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 10,
+        "description": "Number of top candidates to return"
+      },
+      "outreach_enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable simulated outreach for Interest Score"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When this JD was posted"
+      }
+    }
+  },
+
+  "webhook_request_jd_submission": {
+    "type": "object",
+    "description": "Webhook request payload for job description submission",
+    "required": ["job_id", "title"],
+    "properties": {
+      "job_id": {
+        "type": "string",
+        "description": "Unique identifier for this job posting"
+      },
+      "title": {
+        "type": "string",
+        "description": "Job title"
+      },
+      "jd_text": {
+        "type": "string",
+        "description": "Full job description (text or can reference drive file)"
+      },
+      "jd_drive_file_id": {
+        "type": "string",
+        "description": "Alternative: Google Drive file ID for JD document"
+      },
+      "must_have_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Required skills"
+      },
+      "nice_to_have_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Optional skills"
+      },
+      "location": {
+        "type": "string",
+        "description": "Job location"
+      },
+      "min_years_experience": {
+        "type": "integer",
+        "description": "Minimum years of experience"
+      },
+      "seniority_level": {
+        "type": "string",
+        "enum": ["entry", "mid", "senior", "principal", "lead"],
+        "description": "Experience level"
+      },
+      "shortlist_size": {
+        "type": "integer",
+        "default": 10,
+        "description": "Number of candidates to return"
+      },
+      "outreach_enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Simulate outreach to assess interest"
+      }
+    }
+  },
+
+  "webhook_response_job_submitted": {
+    "type": "object",
+    "description": "Webhook response after job submission is accepted",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["processing", "queued", "error"],
+        "description": "Processing status"
+      },
+      "job_id": {
+        "type": "string",
+        "description": "Echo back job ID"
+      },
+      "request_id": {
+        "type": "string",
+        "description": "Unique request identifier for polling/debugging"
+      },
+      "polling_url": {
+        "type": "string",
+        "format": "uri",
+        "description": "URL to poll for results"
+      },
+      "estimated_completion_seconds": {
+        "type": "integer",
+        "description": "Estimated time to results"
+      },
+      "message": {
+        "type": "string",
+        "description": "Status message"
+      }
+    }
+  },
+
+  "webhook_response_results": {
+    "type": "object",
+    "description": "Webhook response with final ranked shortlist",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["completed", "partial", "failed"],
+        "description": "Completion status"
+      },
+      "job_id": {
+        "type": "string",
+        "description": "Job identifier"
+      },
+      "request_id": {
+        "type": "string",
+        "description": "Request tracking ID"
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When results were generated"
+      },
+      "execution_ms": {
+        "type": "integer",
+        "description": "Total execution time in milliseconds"
+      },
+      "candidates_evaluated": {
+        "type": "integer",
+        "description": "Total candidates considered"
+      },
+      "candidates_returned": {
+        "type": "integer",
+        "description": "Number in shortlist"
+      },
+      "shortlist": {
+        "type": "array",
+        "items": {
+          "$ref": "#/shortlist_candidate_item"
+        },
+        "description": "Ranked Top-N candidates"
+      },
+      "notes": {
+        "type": "string",
+        "description": "Any warnings or notes from processing"
+      }
+    }
+  },
+
+  "shortlist_candidate_item": {
+    "type": "object",
+    "description": "Single candidate in ranked shortlist",
+    "properties": {
+      "rank": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Rank position (1 = best fit)"
+      },
+      "candidate_id": {
+        "type": "string",
+        "description": "Candidate identifier"
+      },
+      "name": {
+        "type": "string",
+        "description": "Candidate name"
+      },
+      "email": {
+        "type": "string",
+        "format": "email",
+        "description": "Contact email"
+      },
+      "phone": {
+        "type": "string",
+        "description": "Contact phone (if available)"
+      },
+      "current_title": {
+        "type": "string",
+        "description": "Current job title"
+      },
+      "current_company": {
+        "type": "string",
+        "description": "Current company"
+      },
+      "years_experience": {
+        "type": "number",
+        "description": "Years of experience"
+      },
+      "location": {
+        "type": "string",
+        "description": "Current location"
+      },
+      "match_score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Technical fit score (40% skills + 25% exp + 20% domain + 15% seniority)"
+      },
+      "interest_score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Engagement/interest score from simulated outreach"
+      },
+      "composite_score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Final ranking score (70% match + 30% interest)"
+      },
+      "status_label": {
+        "type": "string",
+        "enum": ["Strong Fit", "Good Fit", "Watchlist", "Requires Review"],
+        "description": "Human-readable status"
+      },
+      "matched_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Skills that match job requirements"
+      },
+      "missing_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Required skills not found in candidate profile"
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Confidence in scoring (0.0–1.0)"
+      },
+      "explainability": {
+        "type": "object",
+        "description": "Detailed reasoning for ranking",
+        "properties": {
+          "why_matched": {
+            "type": "string",
+            "description": "Key reasons for strong match"
+          },
+          "why_not_higher": {
+            "type": "string",
+            "description": "Gaps or concerns preventing higher score"
+          },
+          "interest_rationale": {
+            "type": "string",
+            "description": "How interest score was inferred"
+          },
+          "outreach_summary": {
+            "type": "string",
+            "description": "Summary of outreach interaction (if conducted)"
+          },
+          "match_breakdown": {
+            "type": "object",
+            "properties": {
+              "skills_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "experience_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "domain_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "seniority_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        }
+      },
+      "risk_flags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Any flags for recruiter (e.g., employment gaps, salary mismatch)"
+      },
+      "next_action": {
+        "type": "string",
+        "enum": ["schedule_interview", "conduct_culture_fit_call", "technical_assessment", "require_clarification", "archive"],
+        "description": "Recommended next step for recruiter"
+      }
+    }
+  },
+
+  "outreach_conversation_schema": {
+    "type": "object",
+    "description": "State and history for multi-turn outreach simulation",
+    "properties": {
+      "conversation_id": {
+        "type": "string",
+        "pattern": "^conv-[a-zA-Z0-9_-]{8,}$",
+        "description": "Unique conversation identifier"
+      },
+      "candidate_id": {
+        "type": "string",
+        "description": "Candidate involved"
+      },
+      "job_id": {
+        "type": "string",
+        "description": "Job they're being considered for"
+      },
+      "status": {
+        "type": "string",
+        "enum": ["initiated", "awaiting_response", "completed", "timeout", "error"],
+        "description": "Conversation status"
+      },
+      "turns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "turn_number": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "message_from_agent": {
+              "type": "string",
+              "description": "Message sent by agent/system"
+            },
+            "message_from_candidate": {
+              "type": "string",
+              "description": "Candidate response"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "inferred_intent": {
+              "type": "string",
+              "enum": ["positive", "neutral", "negative", "unclear"],
+              "description": "Intent inferred from response"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "description": "Conversation history"
+      },
+      "final_interest_score": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Computed interest score after outreach"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "completed_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+
+  "scoring_rubric": {
+    "match_score": {
+      "description": "Technical fit based on skills, experience, domain, and seniority",
+      "formula": "0.40*skills + 0.25*experience + 0.20*domain + 0.15*seniority",
+      "components": {
+        "skills_40_percent": {
+          "description": "Overlap between candidate skills and job requirements",
+          "hard_match": "Required skill explicitly listed in CV → 100 points",
+          "partial_match": "Similar/adjacent skill (e.g., PostgreSQL vs MySQL) → 70 points",
+          "missing": "Required skill not found → 0 points",
+          "formula": "(matched + partial*0.7) / total_required * 100"
+        },
+        "experience_25_percent": {
+          "description": "Alignment between candidate background and job requirements",
+          "years_in_role": "candidate_years / min_required (capped at 1.0 if exceeds)",
+          "relevant_domain": "CV mentions target industry/domain → +15 bonus",
+          "formula": "(years_score*100) + domain_bonus"
+        },
+        "domain_20_percent": {
+          "description": "Domain-specific knowledge and terminology match",
+          "key_terms": "E.g., 'distributed systems', 'microservices', 'high-scale'",
+          "score_by_term_frequency": "Keyword frequency in CV vs JD",
+          "formula": "matched_domain_terms / total_domain_terms * 100"
+        },
+        "seniority_15_percent": {
+          "description": "Role level alignment",
+          "exact_match": "Candidate seniority level = JD level → 100",
+          "one_level_up": "Candidate is one level above requirement → 90",
+          "one_level_below": "Candidate is one level below requirement → 60",
+          "way_below": "Significant gap → 20",
+          "formula": "See mapping table"
+        }
+      }
+    },
+    "interest_score": {
+      "description": "Engagement and genuine interest signals from simulated outreach",
+      "formula": "0.35*intent + 0.25*availability + 0.20*compensation + 0.20*depth",
+      "components": {
+        "intent_enthusiasm_35_percent": {
+          "positive_indicators": ["interested", "excited", "definitely", "100%", "absolutely"],
+          "negative_indicators": ["maybe", "not sure", "low priority", "not interested"],
+          "question_count": "More questions = higher engagement",
+          "scoring": "High confidence (0.9+) if multiple positive signals; reduce if mixed/negative"
+        },
+        "availability_25_percent": {
+          "explicit_timeline": "Available in N weeks → high confidence",
+          "vague_responses": "TBD, TBH → reduced confidence",
+          "current_employment": "Status mention affects availability assessment",
+          "scoring": "0–100 based on timeline clarity and flexibility"
+        },
+        "compensation_location_20_percent": {
+          "location_fit": "Candidate OK with location or expresses flexibility → +25 points",
+          "compensation_alignment": "Salary range mentioned or implied fit → +25 points",
+          "scoring": "0–100 based on level of fit/flexibility"
+        },
+        "engagement_depth_20_percent": {
+          "response_quality": "Specific, thoughtful responses → high score",
+          "clarifying_questions": "Asks about role details, team, product → +points",
+          "domain_knowledge": "Mentions concrete examples or relevant experience → +points",
+          "scoring": "0–100 based on quality and depth of conversation"
+        }
+      }
+    },
+    "composite_score": {
+      "description": "Final ranking signal combining both dimensions",
+      "formula": "0.70*match_score + 0.30*interest_score",
+      "rationale": "Match score drives initial filtering; interest score breaks ties and prevents 'perfect on paper, not interested' false positives",
+      "tie_breakers": [
+        "1. Higher composite_score",
+        "2. Higher match_score (if composite tie)",
+        "3. Higher interest_score (if match tie)",
+        "4. More years_experience (if all tie)"
+      ]
+    }
+  },
+
+  "validation_rules": {
+    "job_description": [
+      "job_id must be unique (check against Sheets history)",
+      "title must be non-empty and >= 3 chars",
+      "jd_text OR jd_drive_file_id must be provided (but not both empty)",
+      "If jd_text provided, must be >= 50 characters",
+      "must_have_skills array must not be empty",
+      "must_have_skills must contain string items only",
+      "min_years_experience >= 0 and <= 50",
+      "shortlist_size default to 10 if missing"
+    ],
+    "candidate": [
+      "candidate_id must be unique",
+      "name must be non-empty and >= 2 chars",
+      "email must be valid email format (if provided)",
+      "phone (if provided) must be valid phone format",
+      "years_experience >= 0 and <= 70",
+      "resume_drive_file_id must be valid Drive file ID format (if provided)",
+      "source must be one of: drive, sheets, api"
+    ],
+    "outreach_message": [
+      "conversation_id must match pattern conv-*",
+      "candidate_id must be non-empty",
+      "job_id must be non-empty",
+      "message must be non-empty and >= 10 characters",
+      "timestamp must be valid ISO 8601 format"
+    ]
+  },
+
+  "error_codes": {
+    "validation_failed": {
+      "http_code": 400,
+      "description": "Input validation failed",
+      "examples": ["job_id missing", "must_have_skills empty", "invalid email format"]
+    },
+    "duplicate_request": {
+      "http_code": 409,
+      "description": "Duplicate job_id or request_id detected (idempotency guard)",
+      "examples": ["job_id already submitted within last 1 hour"]
+    },
+    "not_found": {
+      "http_code": 404,
+      "description": "Resource not found",
+      "examples": ["job_id not found in status check", "conversation_id not found"]
+    },
+    "gemini_api_error": {
+      "http_code": 503,
+      "description": "Gemini API call failed",
+      "retry": "Yes, with exponential backoff",
+      "examples": ["Quota exceeded", "Service temporarily unavailable"]
+    },
+    "drive_error": {
+      "http_code": 500,
+      "description": "Google Drive operation failed",
+      "retry": "Yes, with exponential backoff",
+      "examples": ["File not found", "Access denied"]
+    },
+    "sheets_error": {
+      "http_code": 500,
+      "description": "Google Sheets operation failed",
+      "retry": "Yes, with exponential backoff",
+      "examples": ["Quota exceeded", "Invalid sheet ID"]
+    },
+    "internal_error": {
+      "http_code": 500,
+      "description": "Unexpected internal error",
+      "retry": "Yes, check logs and request_id",
+      "examples": ["Unhandled exception in workflow"]
+    }
+  }
+}
