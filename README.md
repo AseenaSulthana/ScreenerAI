@@ -192,7 +192,7 @@ POST /webhook/talent-agent
 
 ## 🎥 Demo
 
-👉 [Demo Video Link Here]
+👉 https://drive.google.com/file/d/1d7O5FKtln6zPskyOGQvNWsnI4KZw3t-e/view?usp=sharing
 
 ---
 
@@ -235,19 +235,6 @@ POST /webhook/talent-agent
 * Feedback loop for continuous learning
 * ATS integration
 
----
-
-## 📌 Submission Details
-
-* GitHub Repo: <link>
-* Demo Video: <link>
-* Live URL: <link>
-
----
-
-## 👨‍💻 Author
-
-Built for Deccan AI Hackathon
 
 ---
 
